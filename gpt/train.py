@@ -2,6 +2,7 @@ from typing import List
 
 import hydra
 import lightning.pytorch as L
+from lightning.pytorch.loggers import TensorBoardLogger
 from loguru import logger
 from omegaconf import DictConfig
 import tiktoken
@@ -68,11 +69,13 @@ class GPTLightningModule(L.LightningModule):
         self.log(
             "learning_rate", lr, on_step=True, on_epoch=False, prog_bar=False, sync_dist=False
         )
+        print("train", loss.item(), "learning_rate", lr)
         return loss
 
     def validation_step(self, batch, _):
         X, Y = batch
         _, loss = self(X, Y)
+        print("val", loss.item())
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         return loss
 
@@ -136,17 +139,16 @@ def train(cfg: DictConfig) -> None:
     logger.info(f"gradient accumulation steps: {grad_accum_steps}")
 
     trainer = L.Trainer(
-        max_steps=cfg.train.max_steps,  # ALSO VALIDATION STEPS?
-        val_check_interval=cfg.train.validation.step,
+        max_steps=cfg.train.max_steps,
+        val_check_interval=2,
         accelerator=env.device_type,
         devices="auto",  # auto-detects number of devices
         strategy=cfg.train.strategy,
         precision="bf16-mixed" if env.use_autocast else "32-true",
         gradient_clip_val=cfg.train.optimizer.grad_clip,
         accumulate_grad_batches=grad_accum_steps,
-        # logger=TensorBoardLogger("lightning_logs", name="gpt_fineweb"),
+        logger=TensorBoardLogger("lightning_logs", name="gpt_fineweb"),
         callbacks=configure_callbacks(env, cfg),
-        log_every_n_steps=10,  # Adjust as needed
     )
     trainer.fit(model, datamodule=datamodule)
 
